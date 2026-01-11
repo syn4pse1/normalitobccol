@@ -63,6 +63,54 @@ app.post(`/${SECRET_PATH}`, async (req, res) => {
   }
 });
 
+// Ruta para getUpdates (polling)
+app.get('/getUpdates', async (req, res) => {
+  try {
+    const offset = req.query.offset || -20;
+    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates?offset=${offset}`;
+    const response = await fetch(telegramUrl);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('Error en getUpdates:', error);
+    res.status(500).json({ ok: false, error: 'Error interno' });
+  }
+});
+
+// Ruta para answerCallbackQuery
+app.post('/answerCallbackQuery', async (req, res) => {
+  try {
+    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`;
+    const response = await fetch(telegramUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('Error en answerCallbackQuery:', error);
+    res.status(500).json({ ok: false, error: 'Error interno' });
+  }
+});
+
+// Ruta para editMessageReplyMarkup
+app.post('/editMessageReplyMarkup', async (req, res) => {
+  try {
+    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageReplyMarkup`;
+    const response = await fetch(telegramUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('Error en editMessageReplyMarkup:', error);
+    res.status(500).json({ ok: false, error: 'Error interno' });
+  }
+});
+
 // Ruta de health check (útil para Render)
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
