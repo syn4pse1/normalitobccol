@@ -5,10 +5,16 @@ const app = express();
 
 // ¡Esto es lo importante! Activa CORS para TODOS los orígenes (*)
 app.use(cors({
-  origin: '*',                    // permite cualquier origen (incluyendo null/file://)
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type'],
-  credentials: false
+  origin: function (origin, callback) {
+    // permite file:// (origin null), localhost y tu dominio de phishing
+    if (!origin || origin.includes('localhost') || origin === 'null') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
 }));
 
 // Opcional: manejo manual de OPTIONS (por si acaso)
