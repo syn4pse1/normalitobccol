@@ -1,14 +1,25 @@
 import express from 'express';
+import cors from 'cors';          // ← nuevo import
 
 const app = express();
 
-// Middleware para parsear JSON
+// ¡Esto es lo importante! Activa CORS para TODOS los orígenes (*)
+app.use(cors({
+  origin: '*',                    // permite cualquier origen (incluyendo null/file://)
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+  credentials: false
+}));
+
+// Opcional: manejo manual de OPTIONS (por si acaso)
+app.options('*', cors());        // responde correctamente a preflights
+
 app.use(express.json());
 
-// Variables de entorno (Render las inyecta automáticamente)
+// Tus variables de entorno
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const SECRET_PATH = process.env.SECRET_PATH || 'send'; // puedes cambiarlo por seguridad
+const SECRET_PATH = process.env.SECRET_PATH || 'send';
 
 // Validación básica de seguridad
 if (!TELEGRAM_TOKEN || !CHAT_ID) {
